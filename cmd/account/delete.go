@@ -15,6 +15,7 @@ import (
 var (
 	accountID string
 	email     string
+	webid     string
 
 	deleteCmd = &cobra.Command{
 		Use:   "rm",
@@ -28,9 +29,10 @@ func init() {
 
 	deleteCmd.Flags().StringVarP(&accountID, "id", "i", "", "Account ID")
 	deleteCmd.Flags().StringVarP(&email, "email", "e", "", "Email")
+	deleteCmd.Flags().StringVarP(&webid, "webid", "w", "", "WebID")
 
 	deleteCmd.Run = func(cmd *cobra.Command, args []string) {
-		if accountID == "" && email == "" {
+		if accountID == "" && email == "" && webid == "" {
 			cmd.Help()
 			return
 		}
@@ -42,6 +44,10 @@ func init() {
 		if email != "" {
 			deleteAccountByEmail(email)
 		}
+
+		if webid != "" {
+			deleteAccountByWebID(webid)
+		}
 	}
 }
 
@@ -50,6 +56,7 @@ func deleteAccountByID(accountID string) {
 	_, err := os.Stat(accountDataFilePath)
 
 	if os.IsNotExist(err) {
+		fmt.Printf("File not found: %s\n", accountDataFilePath)
 		fmt.Println("Account not found")
 		return
 	}
@@ -112,7 +119,7 @@ func deleteAccountByID(accountID string) {
 
 			deleteFile(webIdLinkPath)
 
-			webIdPath := fmt.Sprintf("/data/.internal/accounts/index/webIdLink/webid/%s$.json", url.QueryEscape(owner.WebID))
+			webIdPath := fmt.Sprintf("/data/.internal/accounts/index/webIdLink/webid/%s$.json", strings.ReplaceAll(url.QueryEscape(owner.WebID), "%23", "#"))
 
 			deleteFile(webIdPath)
 		}
@@ -129,6 +136,7 @@ func deleteAccountByEmail(email string) {
 	_, err := os.Stat(accountEmailDataPath)
 
 	if os.IsNotExist(err) {
+		fmt.Printf("File not found: %s\n", accountEmailDataPath)
 		fmt.Println("Account not found")
 		return
 	}
@@ -155,6 +163,43 @@ func deleteAccountByEmail(email string) {
 	}
 
 	for _, data := range passwordData.Payload {
+		deleteAccountByID(data)
+	}
+}
+
+func deleteAccountByWebID(webid string) {
+	webIdPath := fmt.Sprintf("/data/.internal/accounts/index/webIdLink/webId/%s$.json", strings.ReplaceAll(url.QueryEscape(webid), "%23", "#"))
+
+	_, err := os.Stat(webIdPath)
+
+	if os.IsNotExist(err) {
+		fmt.Printf("File not found: %s\n", webIdPath)
+		fmt.Println("Account not found")
+		return
+	}
+
+	webIdFile, err := os.Open(webIdPath)
+
+	if err != nil {
+		return
+	}
+	defer webIdFile.Close()
+
+	webIdLink := &models.PasswordData{}
+
+	bytes, err := io.ReadAll(webIdFile)
+
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	err = json.Unmarshal(bytes, &webIdLink)
+
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	for _, data := range webIdLink.Payload {
 		deleteAccountByID(data)
 	}
 }
