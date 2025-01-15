@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/mrangelba/solid_cli/cmd/models"
@@ -16,6 +17,7 @@ var (
 	accountID string
 	email     string
 	webid     string
+	force     bool
 
 	deleteCmd = &cobra.Command{
 		Use:   "rm",
@@ -30,6 +32,7 @@ func init() {
 	deleteCmd.Flags().StringVarP(&accountID, "id", "i", "", "Account ID")
 	deleteCmd.Flags().StringVarP(&email, "email", "e", "", "Email")
 	deleteCmd.Flags().StringVarP(&webid, "webid", "w", "", "WebID")
+	deleteCmd.Flags().BoolVarP(&force, "force", "f", false, "Force delete")
 
 	deleteCmd.Run = func(cmd *cobra.Command, args []string) {
 		if accountID == "" && email == "" && webid == "" {
@@ -39,6 +42,10 @@ func init() {
 
 		if accountID != "" {
 			deleteAccountByID(accountID)
+
+			if force {
+				deleteFilesWithContent("/data/.internal", accountID)
+			}
 		}
 
 		if email != "" {
@@ -115,9 +122,9 @@ func deleteAccountByID(accountID string) {
 		deleteFile(podBaseUrlPath)
 
 		for _, owner := range pod.Owner {
-			webIdLinkPath := fmt.Sprintf("/data/.internal/accounts/index/webIdLink/%s$.json", owner.ID)
+			ownerPath := fmt.Sprintf("/data/.internal/accounts/index/owner/%s$.json", owner.ID)
 
-			deleteFile(webIdLinkPath)
+			deleteFile(ownerPath)
 
 			webIdPath := fmt.Sprintf("/data/.internal/accounts/index/webIdLink/webid/%s$.json", strings.ReplaceAll(url.QueryEscape(owner.WebID), "%23", "#"))
 
@@ -125,6 +132,12 @@ func deleteAccountByID(accountID string) {
 		}
 
 		deletePodFolder(pod.BaseURL)
+	}
+
+	for _, webid := range accountData.Payload.WebIDLink {
+		webIdPath := fmt.Sprintf("/data/.internal/accounts/index/webIdLink/%s$.json", webid.ID)
+
+		deleteFile(webIdPath)
 	}
 
 	deleteFile(accountDataFilePath)
@@ -164,6 +177,10 @@ func deleteAccountByEmail(email string) {
 
 	for _, data := range passwordData.Payload {
 		deleteAccountByID(data)
+
+		if force {
+			deleteFilesWithContent("/data/.internal", data)
+		}
 	}
 }
 
@@ -201,6 +218,10 @@ func deleteAccountByWebID(webid string) {
 
 	for _, data := range webIdLink.Payload {
 		deleteAccountByID(data)
+
+		if force {
+			deleteFilesWithContent("/data/.internal", data)
+		}
 	}
 }
 
@@ -234,4 +255,33 @@ func deletePodFolder(podUrl string) {
 			fmt.Println(err)
 		}
 	}
+}
+
+func deleteFilesWithContent(rootDir, targetContent string) error {
+	err := filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Ignorar diretórios
+		if info.IsDir() {
+			return nil
+		}
+
+		// Ler o conteúdo do arquivo
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		// Verificar se o conteúdo do arquivo contém a string alvo
+		if strings.Contains(string(content), targetContent) {
+			fmt.Printf("Deleting file %s\n", path)
+			return os.Remove(path)
+		}
+
+		return nil
+	})
+
+	return err
 }
